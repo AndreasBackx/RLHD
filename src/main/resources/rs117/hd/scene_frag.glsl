@@ -87,9 +87,18 @@ void main() {
     // View & light directions are from the fragment to the camera/light
     vec3 viewDir = normalize(cameraPos - IN.position);
 
-    Material material1 = getMaterial(fMaterialData[0] >> MATERIAL_INDEX_SHIFT & MATERIAL_INDEX_MASK);
-    Material material2 = getMaterial(fMaterialData[1] >> MATERIAL_INDEX_SHIFT & MATERIAL_INDEX_MASK);
-    Material material3 = getMaterial(fMaterialData[2] >> MATERIAL_INDEX_SHIFT & MATERIAL_INDEX_MASK);
+    int materialIndex1 = fMaterialData[0] >> MATERIAL_INDEX_SHIFT & MATERIAL_INDEX_MASK;
+    int materialIndex2 = fMaterialData[1] >> MATERIAL_INDEX_SHIFT & MATERIAL_INDEX_MASK;
+    int materialIndex3 = fMaterialData[2] >> MATERIAL_INDEX_SHIFT & MATERIAL_INDEX_MASK;
+    bool homogeneousMaterial = materialIndex1 == materialIndex2 && materialIndex1 == materialIndex3;
+
+    Material material1 = getMaterial(materialIndex1);
+    Material material2 = material1;
+    Material material3 = material1;
+    if (!homogeneousMaterial) {
+        material2 = getMaterial(materialIndex2);
+        material3 = getMaterial(materialIndex3);
+    }
 
     // Water data
     bool isTerrain = (fTerrainData[0] & 1) != 0; // 1 = 0b1
@@ -195,13 +204,19 @@ void main() {
 
             vec3 fragDelta = vec3(0);
 
-            sampleDisplacementMap(material1, tsViewDir, tsLightDir, uv1, fragDelta, selfShadowing);
-            sampleDisplacementMap(material2, tsViewDir, tsLightDir, uv2, fragDelta, selfShadowing);
-            sampleDisplacementMap(material3, tsViewDir, tsLightDir, uv3, fragDelta, selfShadowing);
+            if (homogeneousMaterial) {
+                sampleDisplacementMap(material1, tsViewDir, tsLightDir, uv1, fragDelta, selfShadowing);
+                uv2 = uv1;
+                uv3 = uv1;
+            } else {
+                sampleDisplacementMap(material1, tsViewDir, tsLightDir, uv1, fragDelta, selfShadowing);
+                sampleDisplacementMap(material2, tsViewDir, tsLightDir, uv2, fragDelta, selfShadowing);
+                sampleDisplacementMap(material3, tsViewDir, tsLightDir, uv3, fragDelta, selfShadowing);
 
-            // Average
-            fragDelta /= 3;
-            selfShadowing /= 3;
+                // Average
+                fragDelta /= 3;
+                selfShadowing /= 3;
+            }
 
             // Prevent displaced surfaces from casting flat shadows onto themselves
             fragDelta.z = max(0, fragDelta.z);
@@ -242,8 +257,15 @@ void main() {
 
         // get diffuse textures
         vec4 texColor1 = colorMap1 == -1 ? vec4(1) : texture(textureArray, vec3(uv1, colorMap1), mipBias);
-        vec4 texColor2 = colorMap2 == -1 ? vec4(1) : texture(textureArray, vec3(uv2, colorMap2), mipBias);
-        vec4 texColor3 = colorMap3 == -1 ? vec4(1) : texture(textureArray, vec3(uv3, colorMap3), mipBias);
+        vec4 texColor2;
+        vec4 texColor3;
+        if (homogeneousMaterial) {
+            texColor2 = texColor1;
+            texColor3 = texColor1;
+        } else {
+            texColor2 = colorMap2 == -1 ? vec4(1) : texture(textureArray, vec3(uv2, colorMap2), mipBias);
+            texColor3 = colorMap3 == -1 ? vec4(1) : texture(textureArray, vec3(uv3, colorMap3), mipBias);
+        }
         texColor1.rgb *= material1.brightness;
         texColor2.rgb *= material2.brightness;
         texColor3.rgb *= material3.brightness;
@@ -323,10 +345,14 @@ void main() {
             normals = vec3(0, -1, 0);
         } else {
             #if NORMAL_MAPPING
-                vec3 n1 = sampleNormalMap(material1, uv1, TBN);
-                vec3 n2 = sampleNormalMap(material2, uv2, TBN);
-                vec3 n3 = sampleNormalMap(material3, uv3, TBN);
-                normals = normalize(n1 * IN.texBlend.x + n2 * IN.texBlend.y + n3 * IN.texBlend.z);
+                if (homogeneousMaterial) {
+                    normals = normalize(sampleNormalMap(material1, uv1, TBN));
+                } else {
+                    vec3 n1 = sampleNormalMap(material1, uv1, TBN);
+                    vec3 n2 = sampleNormalMap(material2, uv2, TBN);
+                    vec3 n3 = sampleNormalMap(material3, uv3, TBN);
+                    normals = normalize(n1 * IN.texBlend.x + n2 * IN.texBlend.y + n3 * IN.texBlend.z);
+                }
             #else
                 normals = N;
             #endif
@@ -354,11 +380,13 @@ void main() {
         // specular
         vec3 vSpecularGloss = vec3(material1.specularGloss, material2.specularGloss, material3.specularGloss);
         vec3 vSpecularStrength = vec3(material1.specularStrength, material2.specularStrength, material3.specularStrength);
-        vSpecularStrength *= vec3(
-            material1.roughnessMap == -1 ? 1 : linearToSrgb(texture(textureArray, vec3(uv1, material1.roughnessMap)).r),
-            material2.roughnessMap == -1 ? 1 : linearToSrgb(texture(textureArray, vec3(uv2, material2.roughnessMap)).r),
-            material3.roughnessMap == -1 ? 1 : linearToSrgb(texture(textureArray, vec3(uv3, material3.roughnessMap)).r)
-        );
+        float roughness1 = material1.roughnessMap == -1 ? 1 : linearToSrgb(texture(textureArray, vec3(uv1, material1.roughnessMap)).r);
+        vec3 roughness = vec3(roughness1);
+        if (!homogeneousMaterial) {
+            roughness.y = material2.roughnessMap == -1 ? 1 : linearToSrgb(texture(textureArray, vec3(uv2, material2.roughnessMap)).r);
+            roughness.z = material3.roughnessMap == -1 ? 1 : linearToSrgb(texture(textureArray, vec3(uv3, material3.roughnessMap)).r);
+        }
+        vSpecularStrength *= roughness;
 
         // apply specular highlights to anything semi-transparent
         // this isn't always desirable but adds subtle light reflections to windows, etc.
@@ -379,10 +407,16 @@ void main() {
         // ambient light
         vec3 ambientLightOut = ambientColor * ambientStrength;
 
-        float aoFactor =
-            IN.texBlend.x * (material1.ambientOcclusionMap == -1 ? 1 : texture(textureArray, vec3(uv1, material1.ambientOcclusionMap)).r) +
-            IN.texBlend.y * (material2.ambientOcclusionMap == -1 ? 1 : texture(textureArray, vec3(uv2, material2.ambientOcclusionMap)).r) +
-            IN.texBlend.z * (material3.ambientOcclusionMap == -1 ? 1 : texture(textureArray, vec3(uv3, material3.ambientOcclusionMap)).r);
+        float ao1 = material1.ambientOcclusionMap == -1 ? 1 : texture(textureArray, vec3(uv1, material1.ambientOcclusionMap)).r;
+        float aoFactor;
+        if (homogeneousMaterial) {
+            aoFactor = dot(IN.texBlend, vec3(ao1));
+        } else {
+            aoFactor =
+                IN.texBlend.x * ao1 +
+                IN.texBlend.y * (material2.ambientOcclusionMap == -1 ? 1 : texture(textureArray, vec3(uv2, material2.ambientOcclusionMap)).r) +
+                IN.texBlend.z * (material3.ambientOcclusionMap == -1 ? 1 : texture(textureArray, vec3(uv3, material3.ambientOcclusionMap)).r);
+        }
         ambientLightOut *= aoFactor;
 
         // directional light
