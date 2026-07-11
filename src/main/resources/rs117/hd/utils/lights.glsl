@@ -35,6 +35,9 @@ void calculateLighting(
     vec3 texBlend, vec3 specularGloss, vec3 specularStrength,
     inout vec3 pointLightsOut, inout vec3 pointLightsSpecularOut
 ) {
+    if (pointLightsCount == 0)
+        return;
+
     #if TILED_LIGHTING
         ivec2 tileXY = ivec2(gl_FragCoord.xy / sceneResolution * tiledLightingResolution);
 

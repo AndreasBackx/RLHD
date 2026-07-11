@@ -712,6 +712,9 @@ public class ZoneRenderer implements Renderer {
 	private void tiledLightingPass() {
 		if (!plugin.configTiledLighting || plugin.configDynamicLights == DynamicLights.NONE)
 			return;
+		var sceneContext = sceneManager.getSceneContext();
+		if (sceneContext == null || sceneContext.numVisibleLights == 0)
+			return;
 
 		plugin.updateTiledLightingFbo();
 		assert plugin.fboTiledLighting != 0;
