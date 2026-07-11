@@ -516,7 +516,7 @@ void main() {
     #endif
 
     // apply fog
-    if (!isUnderwater) {
+    if (!isUnderwater && (fogDepth != 0 || groundFogOpacity != 0)) {
         // ground fog
         float distance = distance(IN.position, cameraPos);
         float closeFadeDistance = 1500;
