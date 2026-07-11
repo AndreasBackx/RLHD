@@ -152,7 +152,9 @@ void main() {
             flowMapStrength = 0.075;
         }
 
-        vec2 uvFlow = texture(textureArray, vec3(flowMapUv, flowMap)).xy;
+        vec2 uvFlow = vec2(0);
+        if (flowMapStrength != 0)
+            uvFlow = texture(textureArray, vec3(flowMapUv, flowMap)).xy;
         uv1 += uvFlow * flowMapStrength;
         uv2 += uvFlow * flowMapStrength;
         uv3 += uvFlow * flowMapStrength;
