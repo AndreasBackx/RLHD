@@ -167,7 +167,9 @@ void main() {
         #else
             N = normalize(IN.normal);
         #endif
-        mat3 TBN = cotangent_frame(N, IN.position, IN.uv * -1.0);
+        #if NORMAL_MAPPING || PARALLAX_OCCLUSION_MAPPING || DISPLAY_TANGENT
+            mat3 TBN = cotangent_frame(N, IN.position, IN.uv * -1.0);
+        #endif
 
         #if DISPLAY_UV
             FragColor = vec4(fract(uv1 * IN.texBlend.x + uv2 * IN.texBlend.y + uv3 * IN.texBlend.z), 0.0, 1.0);
@@ -320,10 +322,14 @@ void main() {
         if ((fMaterialData[0] >> MATERIAL_FLAG_UPWARDS_NORMALS & 1) == 1) {
             normals = vec3(0, -1, 0);
         } else {
-            vec3 n1 = sampleNormalMap(material1, uv1, TBN);
-            vec3 n2 = sampleNormalMap(material2, uv2, TBN);
-            vec3 n3 = sampleNormalMap(material3, uv3, TBN);
-            normals = normalize(n1 * IN.texBlend.x + n2 * IN.texBlend.y + n3 * IN.texBlend.z);
+            #if NORMAL_MAPPING
+                vec3 n1 = sampleNormalMap(material1, uv1, TBN);
+                vec3 n2 = sampleNormalMap(material2, uv2, TBN);
+                vec3 n3 = sampleNormalMap(material3, uv3, TBN);
+                normals = normalize(n1 * IN.texBlend.x + n2 * IN.texBlend.y + n3 * IN.texBlend.z);
+            #else
+                normals = N;
+            #endif
         }
 
         float lightDotNormals = dot(normals, lightDir);
