@@ -406,8 +406,11 @@ void main() {
         vec3 lightOut = max(lightDotNormals, 0.0) * lightColor;
 
         // directional light specular
-        vec3 lightReflectDir = reflect(-lightDir, normals);
-        vec3 lightSpecularOut = lightColor * specular(IN.texBlend, viewDir, lightReflectDir, vSpecularGloss, vSpecularStrength);
+        vec3 lightSpecularOut = vec3(0);
+        if (combinedSpecularStrength > 0) {
+            vec3 lightReflectDir = reflect(-lightDir, normals);
+            lightSpecularOut = lightColor * specular(IN.texBlend, viewDir, lightReflectDir, vSpecularGloss, vSpecularStrength);
+        }
 
         // point lights
         vec3 pointLightsOut = vec3(0);

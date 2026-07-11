@@ -25,8 +25,10 @@ void calculateLight(
         float pointLightDotNormals = max(dot(normals, pointLightDir), 0);
         pointLightsOut += pointLightColor * pointLightDotNormals;
 
-        vec3 pointLightReflectDir = reflect(-pointLightDir, normals);
-        pointLightsSpecularOut += pointLightColor * specular(texBlend, viewDir, pointLightReflectDir, specularGloss, specularStrength);
+        if (dot(specularStrength, texBlend) > 0) {
+            vec3 pointLightReflectDir = reflect(-pointLightDir, normals);
+            pointLightsSpecularOut += pointLightColor * specular(texBlend, viewDir, pointLightReflectDir, specularGloss, specularStrength);
+        }
     }
 }
 
