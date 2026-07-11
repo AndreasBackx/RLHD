@@ -155,12 +155,16 @@ void main() {
 
         int idx = 0;
         for (; idx < sortingBinSize; idx++) {
-            if (combinedScore > sortingBin[idx].score) {
-                for (int j = sortingBinSize; j > idx; j--)
-                    sortingBin[j] = sortingBin[j - 1];
+            if (combinedScore > sortingBin[idx].score)
                 break;
-            }
         }
+
+        if (idx >= SORTING_BIN_SIZE)
+            continue;
+
+        int shiftEnd = min(sortingBinSize, SORTING_BIN_SIZE - 1);
+        for (int j = shiftEnd; j > idx; j--)
+            sortingBin[j] = sortingBin[j - 1];
 
         sortingBin[idx].score = combinedScore;
         sortingBin[idx].lightIdx = lightIdx;
