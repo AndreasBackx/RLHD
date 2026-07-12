@@ -9,6 +9,7 @@ import java.io.PrintWriter;
 import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
@@ -91,6 +92,8 @@ public class FrameTimingsRecorder implements FrameTimer.Listener {
 	}
 
 	private Snapshot snapshot;
+	private final IdentityHashMap<FrameTimings, Snapshot.Frame> pendingFrames = new IdentityHashMap<>();
+	private boolean captureFinished;
 
 	public boolean isCapturingSnapshot() {
 		return snapshot != null;
@@ -104,6 +107,8 @@ public class FrameTimingsRecorder implements FrameTimer.Listener {
 			}
 
 			snapshot = new Snapshot();
+			captureFinished = false;
+			pendingFrames.clear();
 			snapshot.osName = System.getProperty("os.name");
 			snapshot.osArch = System.getProperty("os.arch");
 			snapshot.osVersion = System.getProperty("os.version");
@@ -135,14 +140,13 @@ public class FrameTimingsRecorder implements FrameTimer.Listener {
 	}
 
 	@Override
-	public void onFrameCompletion(FrameTimings timings) {
+	public void onFrameSubmission(FrameTimings timings) {
 		if (!isCapturingSnapshot()) {
-			frameTimer.removeTimingsListener(this);
 			return;
 		}
 
 		if (timings.frameTimestamp - snapshot.timestamp > SNAPSHOT_DURATION_MS) {
-			saveSnapshot();
+			captureFinished = true;
 			return;
 		}
 
@@ -151,7 +155,21 @@ public class FrameTimingsRecorder implements FrameTimer.Listener {
 		frame.drawnStatic = plugin.getDrawnStaticRenderableCount();
 		frame.drawnDynamic = plugin.getDrawnDynamicRenderableCount();
 		frame.npcDisplacementCacheSize = npcDisplacementCache.size();
-		snapshot.frames.add(frame);
+		pendingFrames.put(timings, frame);
+	}
+
+	@Override
+	public void onFrameCompletion(FrameTimings timings) {
+		if (!isCapturingSnapshot()) {
+			frameTimer.removeTimingsListener(this);
+			return;
+		}
+
+		Snapshot.Frame frame = pendingFrames.remove(timings);
+		if (frame != null)
+			snapshot.frames.add(frame);
+		if (captureFinished && pendingFrames.isEmpty())
+			saveSnapshot();
 	}
 
 	private void saveSnapshot() {
@@ -176,6 +194,8 @@ public class FrameTimingsRecorder implements FrameTimer.Listener {
 		}
 
 		snapshot = null;
+		captureFinished = false;
+		pendingFrames.clear();
 	}
 
 	private String escapeCsv(String string) {

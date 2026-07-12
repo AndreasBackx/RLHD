@@ -4,6 +4,7 @@ import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
 import java.lang.management.OperatingSystemMXBean;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -37,14 +38,34 @@ public class FrameTimer {
 	private static final int NUM_TIMERS = Timer.TIMERS.length;
 	private static final int NUM_GPU_TIMERS = (int) Arrays.stream(Timer.TIMERS).filter(Timer::isGpuTimer).count();
 	private static final int NUM_GPU_DEBUG_GROUPS = (int) Arrays.stream(Timer.TIMERS).filter(Timer::hasGpuDebugGroup).count();
+	private static final int INITIAL_QUERY_FRAMES = 3;
 
 	private final AutoTimer[] autoTimers = new AutoTimer[NUM_TIMERS];
 	private final boolean[] activeTimers = new boolean[NUM_TIMERS];
 	private final long[] timings = new long[NUM_TIMERS];
-	private final int[] gpuQueries = new int[NUM_TIMERS * 2];
 	private final ArrayDeque<Timer> glDebugGroupStack = new ArrayDeque<>(NUM_GPU_DEBUG_GROUPS);
 	private final ArrayDeque<Listener> listeners = new ArrayDeque<>();
+	private final ArrayDeque<QueryFrame> pendingFrames = new ArrayDeque<>();
+	private final ArrayDeque<QueryFrame> freeFrames = new ArrayDeque<>();
+	private final List<QueryFrame> queryFrames = new ArrayList<>();
+	private QueryFrame currentFrame;
 	private long[] lastGCTimes;
+
+	private static class QueryFrame {
+		private final int[] queries = new int[NUM_TIMERS * 2];
+		private final boolean[] gpuUsed = new boolean[NUM_TIMERS];
+		private final boolean[] gpuEnded = new boolean[NUM_TIMERS];
+		private int completionQuery;
+		private FrameTimings timings;
+		private Listener[] listeners;
+
+		private void reset() {
+			Arrays.fill(gpuUsed, false);
+			Arrays.fill(gpuEnded, false);
+			timings = null;
+			listeners = null;
+		}
+	}
 
 	@RequiredArgsConstructor
 	public class AutoTimer implements AutoCloseable {
@@ -70,13 +91,9 @@ public class FrameTimer {
 
 	private void initialize() {
 		clientThread.invoke(() -> {
-			int[] queryNames = new int[NUM_GPU_TIMERS * 2];
-			glGenQueries(queryNames);
-			int queryIndex = 0;
-			for (var timer : Timer.TIMERS)
-				if (timer.isGpuTimer())
-					for (int j = 0; j < 2; ++j)
-						gpuQueries[timer.ordinal() * 2 + j] = queryNames[queryIndex++];
+			for (int i = 0; i < INITIAL_QUERY_FRAMES; i++)
+				freeFrames.add(createQueryFrame());
+			currentFrame = freeFrames.removeFirst();
 
 			isActive = true;
 			plugin.setupSyncMode();
@@ -107,14 +124,36 @@ public class FrameTimer {
 			plugin.setupSyncMode();
 			plugin.enableDetailedTimers = false;
 
-			glDeleteQueries(gpuQueries);
-			Arrays.fill(gpuQueries, 0);
+			for (var frame : queryFrames) {
+				glDeleteQueries(frame.queries);
+				glDeleteQueries(frame.completionQuery);
+			}
+			queryFrames.clear();
+			pendingFrames.clear();
+			freeFrames.clear();
+			currentFrame = null;
 			reset();
 		});
 	}
 
+	private QueryFrame createQueryFrame() {
+		QueryFrame frame = new QueryFrame();
+		int[] queryNames = new int[NUM_GPU_TIMERS * 2];
+		glGenQueries(queryNames);
+		int queryIndex = 0;
+		for (var timer : Timer.TIMERS)
+			if (timer.isGpuTimer())
+				for (int j = 0; j < 2; ++j)
+					frame.queries[timer.ordinal() * 2 + j] = queryNames[queryIndex++];
+		frame.completionQuery = glGenQueries();
+		queryFrames.add(frame);
+		return frame;
+	}
+
 	@FunctionalInterface
 	public interface Listener {
+		default void onFrameSubmission(FrameTimings timings) {}
+
 		void onFrameCompletion(FrameTimings timings);
 	}
 
@@ -138,6 +177,8 @@ public class FrameTimer {
 	public void reset() {
 		Arrays.fill(timings, 0);
 		Arrays.fill(activeTimers, false);
+		if (currentFrame != null)
+			currentFrame.reset();
 		cumulativeError = 0;
 	}
 
@@ -156,9 +197,10 @@ public class FrameTimer {
 			return null;
 
 		if (timer.isGpuTimer()) {
-			if (activeTimers[index])
+			if (currentFrame.gpuUsed[index])
 				throw new UnsupportedOperationException("Cumulative GPU timing isn't supported");
-			glQueryCounter(gpuQueries[index * 2], GL_TIMESTAMP);
+			glQueryCounter(currentFrame.queries[index * 2], GL_TIMESTAMP);
+			currentFrame.gpuUsed[index] = true;
 		} else if (!activeTimers[index]) {
 			cumulativeError += errorCompensation + 1 >> 1;
 			timings[index] -= System.nanoTime() - cumulativeError;
@@ -183,7 +225,8 @@ public class FrameTimer {
 			return;
 
 		if (timer.isGpuTimer()) {
-			glQueryCounter(gpuQueries[timer.ordinal() * 2 + 1], GL_TIMESTAMP);
+			glQueryCounter(currentFrame.queries[timer.ordinal() * 2 + 1], GL_TIMESTAMP);
+			currentFrame.gpuEnded[timer.ordinal()] = true;
 			// leave the GPU timer active, since it needs to be gathered at a later point
 		} else {
 			cumulativeError += errorCompensation >> 1;
@@ -218,17 +261,13 @@ public class FrameTimer {
 
 		trackGarbageCollection();
 
-		int[] available = { 0 };
 		for (var timer : Timer.TIMERS) {
 			int i = timer.ordinal();
 			if (timer.isGpuTimer()) {
-				if (!activeTimers[i])
-					continue;
-
-				for (int j = 0; j < 2; j++) {
-					while (available[0] == 0)
-						glGetQueryObjectiv(gpuQueries[i * 2 + j], GL_QUERY_RESULT_AVAILABLE, available);
-					timings[i] += (j * 2L - 1) * glGetQueryObjectui64(gpuQueries[i * 2 + j], GL_QUERY_RESULT);
+				if (currentFrame.gpuUsed[i] && !currentFrame.gpuEnded[i]) {
+					log.warn("Timer {} was never ended", timer);
+					glQueryCounter(currentFrame.queries[i * 2 + 1], GL_TIMESTAMP);
+					currentFrame.gpuEnded[i] = true;
 				}
 			} else {
 				if (activeTimers[i]) {
@@ -240,11 +279,54 @@ public class FrameTimer {
 		}
 
 		final float cpuLoad = (float) osBean.getSystemLoadAverage() / osBean.getAvailableProcessors();
-		var frameTimings = new FrameTimings(frameEndTimestamp, timings, cpuLoad);
-		for (var listener : listeners)
-			listener.onFrameCompletion(frameTimings);
+		currentFrame.timings = new FrameTimings(frameEndTimestamp, timings, cpuLoad);
+		currentFrame.listeners = listeners.toArray(new Listener[0]);
+		for (var listener : currentFrame.listeners)
+			listener.onFrameSubmission(currentFrame.timings);
+		glQueryCounter(currentFrame.completionQuery, GL_TIMESTAMP);
+		pendingFrames.addLast(currentFrame);
+		currentFrame = null;
 
-		reset();
+		Arrays.fill(timings, 0);
+		Arrays.fill(activeTimers, false);
+		cumulativeError = 0;
+		drainCompletedFrames();
+		if (isActive) {
+			currentFrame = freeFrames.pollFirst();
+			if (currentFrame == null) {
+				currentFrame = createQueryFrame();
+				log.debug("GPU timing query pool grew to {} frames", queryFrames.size());
+			}
+			currentFrame.reset();
+		}
+	}
+
+	private void drainCompletedFrames() {
+		while (!pendingFrames.isEmpty()) {
+			QueryFrame frame = pendingFrames.peekFirst();
+			if (glGetQueryObjecti(frame.completionQuery, GL_QUERY_RESULT_AVAILABLE) == GL_FALSE)
+				return;
+
+			pendingFrames.removeFirst();
+			for (var timer : Timer.TIMERS) {
+				int i = timer.ordinal();
+				if (!frame.gpuUsed[i])
+					continue;
+				long start = glGetQueryObjectui64(frame.queries[i * 2], GL_QUERY_RESULT);
+				long end = glGetQueryObjectui64(frame.queries[i * 2 + 1], GL_QUERY_RESULT);
+				frame.timings.timers[i] += end - start;
+			}
+
+			Listener[] frameListeners = frame.listeners;
+			FrameTimings frameTimings = frame.timings;
+			frame.reset();
+			freeFrames.addLast(frame);
+			for (var listener : frameListeners)
+				if (listeners.contains(listener))
+					listener.onFrameCompletion(frameTimings);
+			if (!isActive)
+				return;
+		}
 	}
 
 	private void trackGarbageCollection() {
