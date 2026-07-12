@@ -750,7 +750,8 @@ public class ZoneRenderer implements Renderer {
 		final boolean shouldRenderShadows =
 			plugin.configShadowsEnabled &&
 			plugin.fboShadowMap != 0 &&
-			environmentManager.currentDirectionalStrength > 0;
+			environmentManager.currentDirectionalStrength > 0 &&
+			directionalCmd.hasDrawCommands();
 
 		if (shouldRenderShadows || shouldClearShadowFbo) {
 			// Render to the shadow depth map
@@ -935,7 +936,7 @@ public class ZoneRenderer implements Renderer {
 			}
 
 			final boolean isSquashed = ctx.uboWorldViewStruct != null && ctx.uboWorldViewStruct.isSquashed();
-			if (!isSquashed && (!sceneManager.isRoot(ctx) || z.inShadowFrustum)) {
+			if (plugin.configShadowsEnabled && !isSquashed && (!sceneManager.isRoot(ctx) || z.inShadowFrustum)) {
 				directionalCmd.SetShader(fastShadowProgram);
 				z.renderOpaque(directionalCmd, ctx, shouldDrawRoofShadows);
 			}
@@ -977,7 +978,7 @@ public class ZoneRenderer implements Renderer {
 					z.alphaSort(zx - offset, zz - offset, sceneCamera);
 
 				final boolean isSquashed = ctx.uboWorldViewStruct != null && ctx.uboWorldViewStruct.isSquashed();
-				if (!isSquashed && (!sceneManager.isRoot(ctx) || z.inShadowFrustum)) {
+				if (plugin.configShadowsEnabled && !isSquashed && (!sceneManager.isRoot(ctx) || z.inShadowFrustum)) {
 					directionalCmd.SetShader(plugin.configShadowMode == ShadowMode.DETAILED ? detailedShadowProgram : fastShadowProgram);
 					z.renderAlpha(directionalCmd, zx - offset, zz - offset, level, ctx, true, shouldDrawRoofShadows);
 				}
@@ -1008,8 +1009,10 @@ public class ZoneRenderer implements Renderer {
 
 			switch (pass) {
 				case DrawCallbacks.PASS_OPAQUE:
-					directionalCmd.SetShader(fastShadowProgram);
-					directionalCmd.ExecuteSubCommandBuffer(ctx.vaoDirectionalCmd);
+					if (plugin.configShadowsEnabled) {
+						directionalCmd.SetShader(fastShadowProgram);
+						directionalCmd.ExecuteSubCommandBuffer(ctx.vaoDirectionalCmd);
+					}
 
 					sceneCmd.ExecuteSubCommandBuffer(ctx.vaoSceneCmd);
 					break;
@@ -1026,11 +1029,13 @@ public class ZoneRenderer implements Renderer {
 
 					// Draw opaque
 					ctx.drawAll(VAO_OPAQUE, ctx.vaoSceneCmd);
-					ctx.drawAll(VAO_OPAQUE, ctx.vaoDirectionalCmd);
-					ctx.drawAll(VAO_PLAYER, ctx.vaoDirectionalCmd);
+					if (plugin.configShadowsEnabled) {
+						ctx.drawAll(VAO_OPAQUE, ctx.vaoDirectionalCmd);
+						ctx.drawAll(VAO_PLAYER, ctx.vaoDirectionalCmd);
 
-					// Draw shadow-only models
-					ctx.drawAll(VAO_SHADOW, ctx.vaoDirectionalCmd);
+						// Draw shadow-only models
+						ctx.drawAll(VAO_SHADOW, ctx.vaoDirectionalCmd);
+					}
 
 					// Draw players with sorted alpha, without writing depth
 					ctx.vaoSceneCmd.DepthMask(false);

@@ -59,6 +59,7 @@ public class CommandBuffer {
 
 	private long[] cmd = new long[(int) KiB];
 	private int writeHead = 0;
+	private int drawCommandCount = 0;
 
 	public CommandBuffer(String name) {
 		this.name = name;
@@ -85,6 +86,15 @@ public class CommandBuffer {
 
 	public boolean isEmpty() {
 		return writeHead == 0;
+	}
+
+	public boolean hasDrawCommands() {
+		if (drawCommandCount > 0)
+			return true;
+		for (int i = 0; i < objectCount; i++)
+			if (objects[i] instanceof CommandBuffer && ((CommandBuffer) objects[i]).hasDrawCommands())
+				return true;
+		return false;
 	}
 
 	public void BindVertexArray(int vao, GLBuffer ebo) {
@@ -153,6 +163,7 @@ public class CommandBuffer {
 		if (drawCount == 0)
 			return;
 
+		drawCommandCount += drawCount;
 		ensureCapacity(1 + drawCount);
 		cmd[writeHead++] = GL_MULTI_DRAW_ARRAYS_TYPE & 0xFF | mode << 8 | (long) drawCount << 32;
 		for (int i = 0; i < drawCount; i++)
@@ -160,18 +171,21 @@ public class CommandBuffer {
 	}
 
 	public void DrawElements(int mode, int vertexCount, long offset) {
+		drawCommandCount++;
 		ensureCapacity(2);
 		cmd[writeHead++] = GL_DRAW_ELEMENTS_TYPE & 0xFF | (mode & DRAW_MODE_MASK) << 8 | (long) vertexCount << 32;
 		cmd[writeHead++] = offset;
 	}
 
 	public void DrawArrays(int mode, int offset, int vertexCount) {
+		drawCommandCount++;
 		ensureCapacity(2);
 		cmd[writeHead++] = GL_DRAW_ARRAYS_TYPE & 0xFF | (mode & DRAW_MODE_MASK) << 8;
 		cmd[writeHead++] = (long) offset << 32 | vertexCount & INT_MASK;
 	}
 
 	public void DrawArraysIndirect(int mode, int vertexOffset, int vertexCount, GpuIntBuffer indirectBuffer) {
+		drawCommandCount++;
 		ensureCapacity(2);
 
 		// https://registry.khronos.org/OpenGL-Refpages/gl4/html/glDrawArraysIndirect.xhtml
@@ -197,6 +211,7 @@ public class CommandBuffer {
 	}
 
 	public void DrawElementsIndirect(int mode, int indexCount, int indexOffset, GpuIntBuffer indirectBuffer) {
+		drawCommandCount++;
 		ensureCapacity(2);
 
 		// https://registry.khronos.org/OpenGL-Refpages/gl4/html/glDrawElementsIndirect.xhtml
@@ -233,6 +248,7 @@ public class CommandBuffer {
 		if (drawCount == 0)
 			return;
 
+		drawCommandCount += drawCount;
 		ensureCapacity(2);
 		int indirectOffset = indirectBuffer.position();
 
@@ -457,5 +473,6 @@ public class CommandBuffer {
 
 		writeHead = 0;
 		objectCount = 0;
+		drawCommandCount = 0;
 	}
 }
