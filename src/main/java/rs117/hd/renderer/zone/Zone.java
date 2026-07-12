@@ -813,11 +813,7 @@ public class Zone implements Destructible {
 				cmd.BindVertexArray(lastVao, eboAlpha);
 				cmd.BindTextureUnit(GL_TEXTURE_BUFFER, lastTboF, TEXTURE_UNIT_TEXTURED_FACES);
 				// The EBO & IDO is bound by in ZoneRenderer
-				if (GL_CAPS.OpenGL40 && SUPPORTS_INDIRECT_DRAW) {
-					cmd.DrawElementsIndirect(GL_TRIANGLES, vertexCount, (int) (byteOffset / 4L), ZoneRenderer.indirectDrawCmdsStaging);
-				} else {
-					cmd.DrawElements(GL_TRIANGLES, vertexCount, byteOffset);
-				}
+				cmd.DrawElements(GL_TRIANGLES, vertexCount, byteOffset);
 			}
 			alphaFaceCount = 0;
 		} else if (drawIdx != 0) {
@@ -825,11 +821,7 @@ public class Zone implements Destructible {
 			cmd.BindVertexArray(lastVao);
 			cmd.BindTextureUnit(GL_TEXTURE_BUFFER, lastTboF, TEXTURE_UNIT_TEXTURED_FACES);
 			if (drawIdx == 1) {
-				if (GL_CAPS.OpenGL40 && SUPPORTS_INDIRECT_DRAW) {
-					cmd.DrawArraysIndirect(GL_TRIANGLES, drawOff[0], drawEnd[0], ZoneRenderer.indirectDrawCmdsStaging);
-				} else {
-					cmd.DrawArrays(GL_TRIANGLES, drawOff[0], drawEnd[0]);
-				}
+				cmd.DrawArrays(GL_TRIANGLES, drawOff[0], drawEnd[0]);
 			} else {
 				if (GL_CAPS.OpenGL43 && SUPPORTS_INDIRECT_DRAW) {
 					cmd.MultiDrawArraysIndirect(GL_TRIANGLES, glDrawOffset, glDrawLength, drawIdx, ZoneRenderer.indirectDrawCmdsStaging);

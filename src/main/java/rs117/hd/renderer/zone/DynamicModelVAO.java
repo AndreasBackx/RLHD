@@ -283,11 +283,7 @@ public class DynamicModelVAO implements Destructible {
 		cmd.BindTextureUnit(GL_TEXTURE_BUFFER, tbo.getTexId(), TEXTURE_UNIT_TEXTURED_FACES);
 
 		if (drawRangeCount == 1) {
-			if (GL_CAPS.OpenGL40 && SUPPORTS_INDIRECT_DRAW) {
-				cmd.DrawArraysIndirect(GL_TRIANGLES, drawOffsets[0], drawCounts[0], ZoneRenderer.indirectDrawCmdsStaging);
-			} else {
-				cmd.DrawArrays(GL_TRIANGLES, drawOffsets[0], drawCounts[0]);
-			}
+			cmd.DrawArrays(GL_TRIANGLES, drawOffsets[0], drawCounts[0]);
 		} else {
 			if (GL_CAPS.OpenGL43 && SUPPORTS_INDIRECT_DRAW) {
 				cmd.MultiDrawArraysIndirect(GL_TRIANGLES, drawOffsets, drawCounts, drawRangeCount, ZoneRenderer.indirectDrawCmdsStaging);
