@@ -293,7 +293,8 @@ public class CommandBuffer {
 
 	public void execute(RenderState renderState) {
 		// Force VAO state to reapply to ensure it is in sync with the render state
-		renderState.vao.invalidate();
+		if (CALL_STACK.get().isEmpty())
+			renderState.vao.invalidate();
 
 		if (frameTimer != null)
 			frameTimer.begin(Timer.EXECUTE_COMMAND_BUFFER);
