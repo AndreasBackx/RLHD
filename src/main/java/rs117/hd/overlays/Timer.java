@@ -13,7 +13,6 @@ public enum Timer {
 	// CPU timers
 
 	// Draw callbacks
-	DRAW_FLUSH,
 	DRAW_FRAME,
 	DRAW_PRESCENE,
 	DRAW_SCENE,

@@ -369,11 +369,6 @@ public class ZoneRenderer implements Renderer {
 
 		scene.setDrawDistance(plugin.getDrawDistance());
 
-		// Ensure that the previous frames commands have finished flushing
-		frameTimer.begin(Timer.DRAW_FLUSH);
-		glFlush();
-		frameTimer.end(Timer.DRAW_FLUSH);
-
 		plugin.updateSceneFbo();
 
 		if (!sceneManager.isTopLevelValid() || plugin.sceneViewport == null)
