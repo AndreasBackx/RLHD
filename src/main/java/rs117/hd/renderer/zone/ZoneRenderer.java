@@ -134,6 +134,9 @@ public class ZoneRenderer implements Renderer {
 	private SceneShaderProgram sceneProgram;
 
 	@Inject
+	private SceneShaderProgram.DepthOnly depthOnlyProgram;
+
+	@Inject
 	private ShadowShaderProgram.Fast fastShadowProgram;
 
 	@Inject
@@ -236,6 +239,7 @@ public class ZoneRenderer implements Renderer {
 	@Override
 	public void initializeShaders(ShaderIncludes includes) throws ShaderException, IOException {
 		sceneProgram.compile(includes);
+		depthOnlyProgram.compile(includes);
 		fastShadowProgram.compile(includes);
 		detailedShadowProgram.compile(includes);
 	}
@@ -243,6 +247,7 @@ public class ZoneRenderer implements Renderer {
 	@Override
 	public void destroyShaders() {
 		sceneProgram.destroy();
+		depthOnlyProgram.destroy();
 		fastShadowProgram.destroy();
 		detailedShadowProgram.destroy();
 	}
@@ -1044,7 +1049,9 @@ public class ZoneRenderer implements Renderer {
 
 					// Redraw players, this time only writing depth, for correct ordering with the background
 					ctx.vaoSceneCmd.ColorMask(false, false, false, false);
+					ctx.vaoSceneCmd.SetShader(depthOnlyProgram);
 					ctx.drawAll(VAO_PLAYER, ctx.vaoSceneCmd);
+					ctx.vaoSceneCmd.SetShader(sceneProgram);
 					ctx.vaoSceneCmd.ColorMask(true, true, true, true);
 
 					for (int zx = 0; zx < ctx.sizeX; ++zx)

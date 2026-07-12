@@ -33,4 +33,19 @@ public class SceneShaderProgram extends ShaderProgram {
 			uniTextureFaces.ignoreMissing = true;
 		}
 	}
+
+	public static class DepthOnly extends ShaderProgram {
+		private final UniformTexture uniTextureFaces = addUniformTexture("textureFaces");
+
+		public DepthOnly() {
+			super(t -> t
+				.add(GL_VERTEX_SHADER, "scene_vert.glsl")
+				.add(GL_FRAGMENT_SHADER, "depth_only_frag.glsl"));
+		}
+
+		@Override
+		protected void initialize() {
+			uniTextureFaces.set(TEXTURE_UNIT_TEXTURED_FACES);
+		}
+	}
 }
